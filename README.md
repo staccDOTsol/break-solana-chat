@@ -70,10 +70,12 @@ npm run deploy:model
 cargo build --release --manifest-path ../inference/tpu-relay/Cargo.toml
 npm run deploy:model -- --execute --program YOUR_DEPLOYED_PROGRAM \
   --payer ~/test.json --rpc https://api.testnet.solana.com \
-  --tpu --lanes 8 --batch 64
+  --tpu --lanes 8 --batch 64 --pipeline 1
 ```
 
 The uploader resumes confirmed byte offsets, verifies each full payload by reading it back before sealing, and publishes the registry only after all weights are sealed. Expired byte-identical writes can be re-signed safely; other uncertain transactions stop for state reconciliation. `--only-tensor 1` uploads the small final-norm tensor without publishing a registry. TPU submission avoids a public RPC send request for every write; public RPC still supplies network state and batched confirmations. The public RPC transport paces requests at two per second and backs off on HTTP rate limits. Full-account reads are spaced six seconds apart. The relay bounds concurrent deliveries and paces signed-wire batches to 150 transactions/second. `inference/deployment/upload-status.json` records measured progress. Fee payers are funded for the estimated write count plus a reserve; storage deposits come from the supplied testnet payer.
+
+`--pipeline` supports one to four active disjoint batches per lane, replenishing completed batches even while earlier confirmations are pending. The default is one: the four-batch public-testnet trial increased expiry and did not demonstrate a sustained throughput improvement. Saved offsets advance only across a contiguous confirmed prefix. Failures drain pending work and resume from that prefix. At most 2,048 writes may be in flight across all lanes. Resumes prioritize unfinished accounts; already sealed payloads are still rechecked before publishing the registry.
 
 ## Signers, context and parallel work
 

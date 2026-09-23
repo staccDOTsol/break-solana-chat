@@ -18,6 +18,7 @@ import {
   getTransferSolInstruction,
 } from "@solana-program/system";
 import { TpuRelay } from "./tpu-relay.ts";
+import { uploadPipeline } from "./upload-pipeline.ts";
 import {
   Transport,
   TESTNET_GENESIS,
@@ -102,6 +103,9 @@ if (!selected.length) throw new Error("No matching tensor");
 const batchSize = relay ? Number(option("--batch", "32")) : 1;
 if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 128)
   throw new Error("--batch must be 1..128");
+const pipeline = relay ? Number(option("--pipeline", "1")) : 1;
+if (!Number.isInteger(pipeline) || pipeline < 1 || pipeline > 4)
+  throw new Error("--pipeline must be 1..4");
 const program = address(
   option("--program") ??
     (() => {
@@ -115,6 +119,10 @@ const uploader = await createKeyPairSignerFromBytes(
 const lanes = Number(option("--lanes", "2"));
 if (!Number.isInteger(lanes) || lanes < 1 || lanes > 16)
   throw new Error("--lanes must be 1..16");
+if (lanes * batchSize * pipeline > 2048)
+  throw new Error(
+    "Keep at most 2048 writes in flight; reduce --lanes, --batch or --pipeline",
+  );
 await mkdir(output, { recursive: true, mode: 0o700 });
 const lockPath = resolve(output, "identity.json");
 const identity = {
@@ -157,19 +165,27 @@ const balance = (await transport.rpc.getBalance(uploader.address).send()).value;
 // deposits are deducted from the fresh plan below, so a resume need not fund
 // the full storage amount a second time.
 let remainingRent = rent.get(manifest.registryBytes)!;
+const alreadySealed = new Set<number>();
 for (let i = 0; i < signers.length; i += 100) {
   const response = await transport.rpc
     .getMultipleAccounts(
       signers.slice(i, i + 100).map((s) => s.address),
-      { encoding: "base64", dataSlice: { offset: 0, length: 0 } },
+      { encoding: "base64", dataSlice: { offset: 0, length: 128 } },
     )
     .send();
   response.value.forEach((account, j) => {
     if (!account) remainingRent += rent.get(files[i + j].size)!;
     else if (account.owner !== program)
       throw new Error("Existing weight account has another owner");
+    else if (Buffer.from(account.data[0], "base64")[8] === 1)
+      alreadySealed.add(i + j);
   });
 }
+// Resume unfinished accounts immediately. Previously sealed payloads are
+// still read back and checked before the registry can be published.
+selected.sort(
+  (a, b) => Number(alreadySealed.has(a)) - Number(alreadySealed.has(b)),
+);
 if (balance < remainingRent + 100_000_000_000n)
   throw new Error(
     "Insufficient test SOL for remaining storage plus 100 SOL fee reserve",
@@ -282,6 +298,9 @@ async function reportProgress(force = false) {
     cluster: "testnet",
     program,
     model: manifest.model,
+    lanes,
+    batchSize,
+    pipeline,
     runConfirmedBytes: confirmedBytes,
     confirmedPayloadBytes: previouslyConfirmedBytes + confirmedBytes,
     totalPayloadBytes: manifest.totalBytes - 128 * (files.length + 1),
@@ -389,12 +408,12 @@ async function upload(
     { address: signer.address, role: AccountRole.WRITABLE },
     authority,
   ];
-  while (offset < image.length) {
+  async function writeRange(start: number, limit: number) {
     const signed: (Awaited<ReturnType<Transport["sign"]>> & { work: Work })[] =
       [];
-    let end = offset;
-    for (let i = 0; i < batchSize && end < image.length; i++) {
-      const next = Math.min(end + CHUNK, image.length);
+    let end = start;
+    for (let i = 0; i < batchSize && end < limit; i++) {
+      const next = Math.min(end + CHUNK, limit);
       const data = new Uint8Array(5 + next - end);
       data[0] = 91;
       new DataView(data.buffer).setUint32(1, end, true);
@@ -469,15 +488,28 @@ async function upload(
       throw new Error(
         "Batch confirmation timed out; resume from the last confirmed offset",
       );
-    confirmedBytes += end - offset;
-    confirmedWrites += signed.length;
-    offset = end;
-    await writeFile(progressPath + ".tmp", JSON.stringify({ hash, offset }), {
-      mode: 0o600,
-    });
-    await rename(progressPath + ".tmp", progressPath);
-    await reportProgress();
+    return signed.length;
   }
+  if (offset < image.length)
+    await uploadPipeline(
+      offset,
+      image.length,
+      CHUNK * batchSize,
+      pipeline,
+      writeRange,
+      async (end, writes) => {
+        await writeFile(
+          progressPath + ".tmp",
+          JSON.stringify({ hash, offset: end }),
+          { mode: 0o600 },
+        );
+        await rename(progressPath + ".tmp", progressPath);
+        confirmedBytes += end - offset;
+        confirmedWrites += writes;
+        offset = end;
+        await reportProgress();
+      },
+    );
   chain = await readWholeAccount(signer.address);
   if (
     !chain.value ||

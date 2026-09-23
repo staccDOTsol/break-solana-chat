@@ -1,0 +1,29 @@
+{
+  "cluster": "testnet",
+  "rpc": "https://api.testnet.solana.com",
+  "lanes": 8,
+  "batchSize": 64,
+  "rpcRequestsPerSecond": 2,
+  "relayTransactionRateCap": 150,
+  "trials": [
+    {
+      "mode": "one batch per lane",
+      "startedAt": "2026-09-23T10:01:30.284Z",
+      "lastProgressAt": "2026-09-23T11:00:36.182Z",
+      "confirmedWrites": 174042,
+      "confirmedBytes": 654187008,
+      "writesPerSecond": 49.08,
+      "expiredWritesResigned": 1261
+    },
+    {
+      "mode": "four active batches per lane",
+      "startedAt": "2026-09-23T11:05:23.485Z",
+      "lastProgressAt": "2026-09-23T11:11:07.018Z",
+      "confirmedWrites": 21485,
+      "confirmedBytes": 80762880,
+      "writesPerSecond": 62.54,
+      "expiredWritesResigned": 466
+    }
+  ],
+  "conclusion": "The deeper pipeline did not establish sustained improvement over the one-batch baseline. Default remains one batch. These are unequal-duration live samples, not a controlled benchmark."
+}
