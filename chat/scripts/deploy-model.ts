@@ -254,6 +254,24 @@ const startedAt = Date.now();
 let confirmedBytes = 0,
   confirmedWrites = 0,
   sealedAccounts = 0;
+let previouslyConfirmedBytes = 0;
+for (let i = 0; i < files.length; i++) {
+  try {
+    const saved = JSON.parse(
+      await readFile(resolve(output, `weight-${i}-progress.json`), "utf8"),
+    );
+    if (
+      saved.hash !== files[i].payloadSha256 ||
+      !Number.isInteger(saved.offset) ||
+      saved.offset < 128 ||
+      saved.offset > files[i].size
+    )
+      throw new Error(`Invalid saved progress for weight-${i}`);
+    previouslyConfirmedBytes += saved.offset - 128;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
 let lastProgressAt = 0;
 async function reportProgress(force = false) {
   if (!force && Date.now() - lastProgressAt < 15_000) return;
@@ -265,6 +283,8 @@ async function reportProgress(force = false) {
     program,
     model: manifest.model,
     runConfirmedBytes: confirmedBytes,
+    confirmedPayloadBytes: previouslyConfirmedBytes + confirmedBytes,
+    totalPayloadBytes: manifest.totalBytes - 128 * (files.length + 1),
     runConfirmedWrites: confirmedWrites,
     runSealedAccounts: sealedAccounts,
     writesPerSecond: Number(

@@ -185,6 +185,7 @@ export class Transport {
     reject: (e: unknown) => void;
   }[] = [];
   private statusTimer?: ReturnType<typeof setTimeout>;
+  private pollingStatuses = false;
   constructor(url = "https://api.testnet.solana.com") {
     if (new URL(url).hostname !== "api.testnet.solana.com") {
       this.rpc = createSolanaRpc(url);
@@ -221,29 +222,32 @@ export class Transport {
   status(signature: Signature): Promise<Confirmation> {
     return new Promise((resolve, reject) => {
       this.statusRequests.push({ signature, resolve, reject });
-      this.statusTimer ??= setTimeout(() => {
-        void this.flushStatuses();
-      }, 100);
+      if (!this.pollingStatuses)
+        this.statusTimer ??= setTimeout(() => {
+          void this.flushStatuses();
+        }, 100);
     });
   }
   private async flushStatuses() {
     this.statusTimer = undefined;
-    const requests = this.statusRequests.splice(0, 256);
-    if (this.statusRequests.length)
-      this.statusTimer = setTimeout(() => {
-        void this.flushStatuses();
-      }, 100);
-    try {
-      const result = await this.rpc
-        .getSignatureStatuses(
-          requests.map((r) => r.signature),
-          { searchTransactionHistory: true },
-        )
-        .send();
-      requests.forEach((r, i) => r.resolve(result.value[i]));
-    } catch (error) {
-      requests.forEach((r) => r.reject(error));
+    this.pollingStatuses = true;
+    // Collect arrivals while the previous request is in flight, instead of
+    // queueing many small RPC calls behind the public endpoint's rate limit.
+    while (this.statusRequests.length) {
+      const requests = this.statusRequests.splice(0, 256);
+      try {
+        const result = await this.rpc
+          .getSignatureStatuses(
+            requests.map((r) => r.signature),
+            { searchTransactionHistory: true },
+          )
+          .send();
+        requests.forEach((r, i) => r.resolve(result.value[i]));
+      } catch (error) {
+        requests.forEach((r) => r.reject(error));
+      }
     }
+    this.pollingStatuses = false;
   }
   height(): Promise<bigint> {
     if (!this.heightValue || Date.now() - this.heightAt > 2000) {

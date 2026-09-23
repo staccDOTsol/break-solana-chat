@@ -7,7 +7,7 @@ import {
 } from "@solana/kit";
 import { Transport } from "../src/chain/transport.ts";
 
-test("parallel confirmations use a single RPC batch and preserve signature order", async () => {
+test("parallel confirmations share capped RPC batches and preserve signature order", async () => {
   const transport = new Transport();
   let calls = 0;
   Object.defineProperty(transport, "rpc", {
@@ -15,21 +15,23 @@ test("parallel confirmations use a single RPC batch and preserve signature order
       getSignatureStatuses: (signatures: Signature[]) => ({
         send: async () => {
           calls++;
+          assert(signatures.length <= 256);
           return {
-            value: signatures.map((signature, i) =>
-              i === 7 ? null : { slot: BigInt(i), signature },
-            ),
+            value: signatures.map((signature) => {
+              const i = Number(signature.split("-")[1]);
+              return i === 7 ? null : { slot: BigInt(i), signature };
+            }),
           };
         },
       }),
     },
   });
   const result = await Promise.all(
-    Array.from({ length: 16 }, (_, i) =>
+    Array.from({ length: 300 }, (_, i) =>
       transport.status(`signature-${i}` as Signature),
     ),
   );
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
   assert.equal(result[7], null);
   result.forEach((status, i) => {
     if (i !== 7) assert.equal(status?.slot, BigInt(i));

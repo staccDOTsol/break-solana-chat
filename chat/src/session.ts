@@ -43,7 +43,9 @@ export async function attachConsole() {
       const upload = await (await fetch("/api/upload")).json();
       if (upload.runConfirmedBytes !== undefined) {
         element("metrics").textContent =
-          `${(upload.runConfirmedBytes / 2 ** 20).toFixed(1)} MiB UPLOADED THIS RUN`;
+          upload.confirmedPayloadBytes === undefined
+            ? `${(upload.runConfirmedBytes / 2 ** 20).toFixed(1)} MiB UPLOADED THIS RUN`
+            : `${(upload.confirmedPayloadBytes / 2 ** 20).toFixed(1)} / ${(upload.totalPayloadBytes / 2 ** 20).toFixed(1)} MiB UPLOADED`;
         progress(
           `${status.message} ${upload.runConfirmedWrites.toLocaleString()} writes confirmed this run. Last update: ${new Date(upload.updatedAt).toLocaleTimeString()}.`,
         );
