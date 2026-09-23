@@ -1,0 +1,382 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "date": "2026-09-23",
+  "status": "local validation passed; live model deployment incomplete",
+  "programSha256": "fedd3ec0f00073444006b51cecf6a0df4d7488307f060503bdf43b7ba2275e16",
+  "format": "q4g128-f16-v1",
+  "accountBytes": 4224531264,
+  "weightAccounts": 569,
+  "registryAccounts": 1,
+  "reference": {
+    "prompt": "Hello",
+    "templateThinking": false,
+    "tokens": [
+      151644,
+      872,
+      198,
+      9707,
+      151645,
+      198,
+      151644,
+      77091,
+      198,
+      151667,
+      271,
+      151668,
+      271
+    ],
+    "positions": 13,
+    "layerStates": 468,
+    "maximumLayerAbsoluteError": 0.0,
+    "logits": [
+      {
+        "position": 0,
+        "native": 8,
+        "reference": 8,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 1,
+        "native": 198,
+        "reference": 198,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 2,
+        "native": 2610,
+        "reference": 2610,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 3,
+        "native": 0,
+        "reference": 0,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 4,
+        "native": 271,
+        "reference": 271,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 5,
+        "native": 151644,
+        "reference": 151644,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 6,
+        "native": 271,
+        "reference": 271,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 7,
+        "native": 659,
+        "reference": 659,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 8,
+        "native": 151667,
+        "reference": 151667,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 9,
+        "native": 198,
+        "reference": 198,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 10,
+        "native": 9707,
+        "reference": 9707,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 11,
+        "native": 271,
+        "reference": 271,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      },
+      {
+        "position": 12,
+        "native": 9707,
+        "reference": 9707,
+        "top10Agreement": 10,
+        "maxLogitError": 0.0
+      }
+    ],
+    "scalarMath": "libm 0.2.16, no arch optimizations, force-soft-floats"
+  },
+  "schedule": {
+    "before": 119032,
+    "after": 91191,
+    "instructionReductionPercent": 23.389508703541907,
+    "comparedFloatDumps": 494,
+    "byteIdenticalBeforePortableMathChange": true
+  },
+  "sbf": {
+    "harnessRuntime": "Agave 4.2.2 / Mollusk 0.15.1",
+    "testnetObservedRuntime": "4.3.0-rc.1",
+    "transactionComputeCeiling": 1400000,
+    "nativeArithmeticMatches": true,
+    "checks": [
+      "unsigned authority rejected",
+      "stale epoch rejected",
+      "foreign-session worker rejected",
+      "duplicate slice idempotent",
+      "out-of-order slice rejected"
+    ],
+    "computeMeasurements": [
+      {
+        "operation": "phase=1 step=0",
+        "computeUnits": 566136
+      },
+      {
+        "operation": "phase=2 step=0",
+        "computeUnits": 654195
+      },
+      {
+        "operation": "phase=2 step=1",
+        "computeUnits": 637399
+      },
+      {
+        "operation": "phase=2 step=2",
+        "computeUnits": 636434
+      },
+      {
+        "operation": "phase=2 step=3",
+        "computeUnits": 636581
+      },
+      {
+        "operation": "phase=2 step=4",
+        "computeUnits": 637046
+      },
+      {
+        "operation": "phase=3 step=0",
+        "computeUnits": 1246628
+      },
+      {
+        "operation": "phase=3 merge pos=127",
+        "computeUnits": 70816
+      },
+      {
+        "operation": "phase=4 step=0",
+        "computeUnits": 633700
+      },
+      {
+        "operation": "phase=4 step=1",
+        "computeUnits": 1030236
+      },
+      {
+        "operation": "phase=4 step=2",
+        "computeUnits": 1030351
+      },
+      {
+        "operation": "phase=4 step=3",
+        "computeUnits": 1030353
+      },
+      {
+        "operation": "phase=4 step=4",
+        "computeUnits": 1031008
+      },
+      {
+        "operation": "phase=4 step=5",
+        "computeUnits": 1031532
+      },
+      {
+        "operation": "phase=4 step=6",
+        "computeUnits": 558054
+      },
+      {
+        "operation": "phase=5 step=0",
+        "computeUnits": 910698
+      },
+      {
+        "operation": "phase=5 merge pos=0",
+        "computeUnits": 778790
+      },
+      {
+        "operation": "phase=5 merge pos=127",
+        "computeUnits": 754300
+      },
+      {
+        "operation": "phase=6 step=0",
+        "computeUnits": 1248347
+      },
+      {
+        "operation": "phase=6 merge pos=127",
+        "computeUnits": 72902
+      },
+      {
+        "operation": "phase=7 step=0",
+        "computeUnits": 1253435
+      },
+      {
+        "operation": "phase=7 step=1",
+        "computeUnits": 640967
+      },
+      {
+        "operation": "phase=7 step=2",
+        "computeUnits": 642636
+      },
+      {
+        "operation": "phase=7 step=3",
+        "computeUnits": 641354
+      },
+      {
+        "operation": "phase=7 step=4",
+        "computeUnits": 641514
+      },
+      {
+        "operation": "phase=8 step=0",
+        "computeUnits": 1248205
+      },
+      {
+        "operation": "phase=8 merge pos=127",
+        "computeUnits": 79027
+      },
+      {
+        "operation": "phase=9 step=0",
+        "computeUnits": 158439
+      },
+      {
+        "operation": "phase=9 merge pos=127",
+        "computeUnits": 68806
+      },
+      {
+        "operation": "phase=10 step=0",
+        "computeUnits": 1243936
+      },
+      {
+        "operation": "phase=10 merge pos=127",
+        "computeUnits": 72883
+      },
+      {
+        "operation": "phase=11 step=0",
+        "computeUnits": 406936
+      },
+      {
+        "operation": "phase=12 step=0",
+        "computeUnits": 654190
+      },
+      {
+        "operation": "phase=12 step=1",
+        "computeUnits": 636757
+      },
+      {
+        "operation": "phase=12 step=2",
+        "computeUnits": 636915
+      },
+      {
+        "operation": "phase=12 step=3",
+        "computeUnits": 635801
+      },
+      {
+        "operation": "phase=12 step=4",
+        "computeUnits": 637887
+      },
+      {
+        "operation": "phase=13 step=0",
+        "computeUnits": 1249477
+      },
+      {
+        "operation": "phase=13 merge pos=127",
+        "computeUnits": 113946
+      },
+      {
+        "operation": "phase=15 step=0",
+        "computeUnits": 473739
+      },
+      {
+        "operation": "phase=15 step=1",
+        "computeUnits": 473651
+      },
+      {
+        "operation": "phase=15 step=2",
+        "computeUnits": 473746
+      },
+      {
+        "operation": "phase=15 step=3",
+        "computeUnits": 473659
+      },
+      {
+        "operation": "phase=16 step=0",
+        "computeUnits": 473749
+      },
+      {
+        "operation": "phase=16 step=1",
+        "computeUnits": 473662
+      },
+      {
+        "operation": "phase=16 step=2",
+        "computeUnits": 473729
+      },
+      {
+        "operation": "phase=16 step=3",
+        "computeUnits": 473695
+      },
+      {
+        "operation": "phase=16 step=4",
+        "computeUnits": 473691
+      },
+      {
+        "operation": "phase=16 step=5",
+        "computeUnits": 473719
+      },
+      {
+        "operation": "phase=16 step=6",
+        "computeUnits": 473666
+      },
+      {
+        "operation": "phase=16 step=7",
+        "computeUnits": 473651
+      },
+      {
+        "operation": "phase=16 step=8",
+        "computeUnits": 473675
+      },
+      {
+        "operation": "phase=16 step=9",
+        "computeUnits": 473717
+      },
+      {
+        "operation": "phase=16 step=10",
+        "computeUnits": 473692
+      },
+      {
+        "operation": "phase=16 step=11",
+        "computeUnits": 473697
+      }
+    ]
+  },
+  "liveUploadPlan": {
+    "rentSOL": 21460.98945792,
+    "transactions": 1124997,
+    "payloadBytesPerWrite": 3760,
+    "wireBytesPerFullWrite": 4089
+  },
+  "limitations": [
+    "Program deployed and bytecode verified; full model upload is incomplete",
+    "Initial full shard and norm tensors uploaded and read-back verified; complete model registry is unpublished",
+    "Full chat transport has not been exercised on a deployed model",
+    "128-token runtime context",
+    "General model quality and perplexity have not been measured"
+  ]
+}

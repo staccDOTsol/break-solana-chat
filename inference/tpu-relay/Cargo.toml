@@ -1,0 +1,11 @@
+[package]
+name = "sea-tpu-relay"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+[dependencies]
+solana-client = { version = "=4.3.0-rc.1", features = ["agave-unstable-api"] }
+solana-tpu-client = { version = "=4.3.0-rc.1", features = ["agave-unstable-api"] }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+base64 = "0.22"

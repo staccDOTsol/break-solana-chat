@@ -4,3 +4,12 @@ build/
 *.log
 /dist/
 node_modules
+# Local model files and signing material never belong in the public fork.
+.venv/
+inference/artifacts/
+inference/deployment/
+**/target/
+**/node_modules/
+**/*keypair*.json
+**/.env*
+**/dist/

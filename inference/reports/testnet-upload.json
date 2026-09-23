@@ -1,0 +1,36 @@
+{
+  "cluster": "testnet",
+  "program": "BkWuzU3fn4NS7LXdBxH1j4gRyRw3ma35aNGytbANzUvB",
+  "completeModel": false,
+  "verifiedAt": "2026-09-23",
+  "payloadBytesPerWrite": 3760,
+  "wireBytesPerFullWrite": 4089,
+  "plannedUploadTransactions": 1124997,
+  "verifiedAndSealedAccounts": [
+    {
+      "sealed": "weight-32",
+      "address": "8C7GXRs7BhmJxq2tQKfDNpyxGeaxiZtbuBcWyEe6SMa8",
+      "bytes": 16512,
+      "hash": "9be52f7d4e9e74c50e9b66fb992c760787abe9a435c550cd6c47e0f168c1267d"
+    },
+    {
+      "sealed": "weight-0",
+      "address": "BweY8EvRe8RRDzpwYGeEB1vhtKxupp4W9xFFXAfSg6yN",
+      "bytes": 10272896,
+      "hash": "a85ad84ae803173f1e40a77c3bc21f9feb2c82b0f49fd28f7d4de916ee41265a"
+    },
+    {
+      "sealed": "weight-1",
+      "address": "6GnzSeTejKY3wpVFzrouoDn3qszCyb9eczkA58LzaDeY",
+      "bytes": 10272896,
+      "hash": "7b16742c68b59674d44615794926ff7beb48875a1c709b1e006b3c0c481080cd"
+    },
+    {
+      "sealed": "weight-65",
+      "address": "DXR15EHa4SxaMkVtwBrkVcqXmW5AsfXnCdFtitu16VJF",
+      "bytes": 33920,
+      "hash": "be2dccf42f96acdc33a444a8181af1f980385c3ffdc43239df898a6df5f170ff"
+    }
+  ],
+  "note": "Partial receipt. Each listed payload was read back and SHA-256 checked before the seal transaction was confirmed. The complete model registry remains unpublished."
+}
