@@ -2,7 +2,9 @@
 
 A fork of the original [solana-labs/break](https://github.com/solana-labs/break), adapted toward a real Qwen3-8B model running through Solana testnet transactions. The landing page argues for independent model execution; the console reports actual deployment state.
 
-**Current state: exported and locally validated, not a live model deployment.** The public testnet RPC rate-limited the program deployment. The approximately 4 GiB model has not been uploaded. No mainnet transactions are authorized or supported by the new transport.
+**Current state: program deployed; full model upload in progress.** The testnet program's bytecode matches the locally validated binary. A first model tensor was uploaded, read back, hash-verified and sealed through transaction v1 over TPU. The complete 3.934 GiB model registry is not yet published, so live model inference remains unverified. The transport is restricted to testnet.
+
+Program: [`BkWuzU3fn4NS7LXdBxH1j4gRyRw3ma35aNGytbANzUvB`](https://explorer.solana.com/address/BkWuzU3fn4NS7LXdBxH1j4gRyRw3ma35aNGytbANzUvB?cluster=testnet). See the [bytecode receipt](inference/reports/testnet-program.json).
 
 | Measured artifact | Result |
 |---|---:|
@@ -13,7 +15,7 @@ A fork of the original [solana-labs/break](https://github.com/solana-labs/break)
 | Account storage | 4,224,531,264 bytes / **3.934401 GiB** |
 | Accounts | 569 weight accounts + 1 immutable registry |
 | Testnet storage rent quote | 21,460.98945792 SOL (2026-09-23; rerun the plan for a fresh quote) |
-| Upload plan | 1,208,420 transactions at 3,500 payload bytes per write |
+| Upload plan | 1,124,997 transactions at 3,760 payload bytes per write (4,089-byte v1 packets) |
 | Forward instructions, short-context token | 91,191, down from 119,032; excludes the start-token instruction and session setup |
 
 The instruction reduction is **23.4%** with identical outputs before the portable-math change. This is still a very large amount of work per token. It is not an interactive-speed result or a demonstrated frontier model on mainnet.
@@ -25,11 +27,11 @@ Use the new `chat` package. The original game remains in `client`, `server`, and
 ```sh
 cd chat
 npm ci
-npm run server   # localhost:8787: receipts and local tokenizer only
+npm run server   # localhost:8787: receipts, local tokenizer, optional signed-wire relay
 npm run dev      # localhost:5173: landing page and browser transaction client
 ```
 
-The receipt server never runs inference or calls a model provider. The browser signs transactions; model arithmetic belongs to the on-chain program. Chat stays disabled until the full sealed registry is deployed and verified. The UI and transport are implemented but their full live-chain conversation remains unverified.
+The receipt server never runs inference or calls a model provider. The browser signs transactions; model arithmetic belongs to the on-chain program. Set `SEA_TPU_RELAY_BIN` to the compiled relay executable to send signed browser transactions directly to testnet leaders while using public RPC for reads and confirmations. The relay receives no signing keys. Chat stays disabled until the full sealed registry is deployed and verified. The full live-chain conversation remains unverified.
 
 ## Export and validate
 
@@ -65,11 +67,13 @@ npm run deploy:model
 `--execute` requires a deployed program and reads the local payer file. Every path verifies the testnet genesis hash and transaction-v1 activation. Signing keys, checkpoint weights, progress files and deployment receipts stay under ignored directories.
 
 ```sh
+cargo build --release --manifest-path ../inference/tpu-relay/Cargo.toml
 npm run deploy:model -- --execute --program YOUR_DEPLOYED_PROGRAM \
-  --payer ~/test.json --rpc YOUR_TESTNET_RPC --lanes 2
+  --payer ~/test.json --rpc https://api.testnet.solana.com \
+  --tpu --lanes 8 --batch 64
 ```
 
-The uploader resumes confirmed byte offsets, verifies each full payload by reading it back before sealing, and publishes the registry only after all weights are sealed. Resolve uncertain transaction confirmations before resuming. The public RPC already returned connection-rate-limit errors during program upload; bulk upload needs an endpoint that can sustain the measured volume. An interrupted program buffer key has been preserved locally for recovery; it is not committed.
+The uploader resumes confirmed byte offsets, verifies each full payload by reading it back before sealing, and publishes the registry only after all weights are sealed. Expired byte-identical writes can be re-signed safely; other uncertain transactions stop for state reconciliation. `--only-tensor 1` uploads the small final-norm tensor without publishing a registry. TPU submission avoids a public RPC send request for every write; public RPC still supplies network state and batched confirmations. The public RPC transport paces requests at two per second and backs off on HTTP rate limits. Full-account reads are spaced six seconds apart. The relay bounds concurrent deliveries and paces signed-wire batches to 150 transactions/second. `inference/deployment/upload-status.json` records measured progress. Fee payers are funded for the estimated write count plus a reserve; storage deposits come from the supplied testnet payer.
 
 ## Signers, context and parallel work
 

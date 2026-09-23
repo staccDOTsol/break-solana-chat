@@ -38,9 +38,35 @@ export async function attachConsole() {
   const status = await response.json();
   element("status").textContent = status.stage;
   progress(status.message);
-  if (!status.ready) return;
+  if (!status.ready) {
+    try {
+      const upload = await (await fetch("/api/upload")).json();
+      if (upload.runConfirmedBytes !== undefined) {
+        element("metrics").textContent =
+          `${(upload.runConfirmedBytes / 2 ** 20).toFixed(1)} MiB UPLOADED THIS RUN`;
+        progress(
+          `${status.message} ${upload.runConfirmedWrites.toLocaleString()} writes confirmed this run. Last update: ${new Date(upload.updatedAt).toLocaleTimeString()}.`,
+        );
+        if (upload.error)
+          progress(
+            `Upload stopped: ${upload.error}. Confirmed offsets are saved.`,
+          );
+      }
+    } catch {
+      /* Deployment status remains usable without a progress file. */
+    }
+    setTimeout(() => {
+      void attachConsole().catch((e) => progress(String(e)));
+    }, 15_000);
+    return;
+  }
   const deployment: Deployment = await (await fetch("/api/deployment")).json();
   const transport = new Transport(status.rpc);
+  if (status.submission === "tpu") {
+    transport.submitter = async (wire) => {
+      await post("/api/submit", { wires: [wire] });
+    };
+  }
   let wallet = await loadWallet(deployment.registry),
     engine: Engine;
   let confirmed = 0,

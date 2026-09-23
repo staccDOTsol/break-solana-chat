@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { address } from "@solana/kit";
 import { AutoTokenizer, env } from "@huggingface/transformers";
 import { Transport } from "./src/chain/transport.ts";
+import { TpuRelay } from "./scripts/tpu-relay.ts";
 const artifacts = resolve(
   import.meta.dirname,
   "../inference/artifacts/qwen3-8b-q4g128",
@@ -13,6 +14,8 @@ const deploymentPath = resolve(
   "../inference/deployment/public.json",
 );
 const rpc = process.env.SOLANA_TESTNET_RPC ?? "https://api.testnet.solana.com";
+let relay: TpuRelay | undefined;
+const useTpu = !!process.env.SEA_TPU_RELAY_BIN;
 env.allowRemoteModels = false;
 let tokenizer: ReturnType<typeof AutoTokenizer.from_pretrained> | undefined;
 const getTokenizer = () =>
@@ -20,12 +23,12 @@ const getTokenizer = () =>
     local_files_only: true,
   }));
 let verified: { at: number; deployment: unknown } | undefined;
-async function body(req: AsyncIterable<Uint8Array>) {
+async function body(req: AsyncIterable<Uint8Array>, limit = 16000) {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 16000) throw new Error("Request too large");
+    if (size > limit) throw new Error("Request too large");
     chunks.push(Buffer.from(chunk));
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -73,6 +76,40 @@ createServer(async (req, res) => {
     const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "no-store");
+    if (req.method === "POST" && path === "/api/submit") {
+      if (!useTpu) throw new Error("Local TPU relay is not configured");
+      const origin = req.headers.origin;
+      if (
+        origin &&
+        ![
+          "http://127.0.0.1:5173",
+          "http://localhost:5173",
+          "http://127.0.0.1:8787",
+          "http://localhost:8787",
+        ].includes(origin)
+      )
+        throw new Error("Only the local console can submit transactions");
+      if (req.headers["content-type"] !== "application/json")
+        throw new Error("Expected application/json");
+      const input = await body(req, 1_600_000);
+      if (
+        !Array.isArray(input.wires) ||
+        input.wires.length < 1 ||
+        input.wires.length > 256 ||
+        input.wires.some(
+          (wire: unknown) =>
+            typeof wire !== "string" ||
+            !/^[A-Za-z0-9+/]+={0,2}$/.test(wire) ||
+            Buffer.from(wire, "base64").length < 65 ||
+            Buffer.from(wire, "base64").length > 4096,
+        )
+      )
+        throw new Error("Invalid signed transaction batch");
+      relay ??= new TpuRelay(rpc);
+      await relay.send(input.wires);
+      respond(200, { submitted: true });
+      return;
+    }
     if (
       req.method === "POST" &&
       (path === "/api/tokenize" || path === "/api/decode")
@@ -146,17 +183,18 @@ createServer(async (req, res) => {
         ready: !!deployment,
         stage: deployment
           ? "MODEL READY / TESTNET"
-          : "WEIGHTS EXPORTED / NOT DEPLOYED",
+          : "PROGRAM DEPLOYED / WEIGHT UPLOAD PENDING",
         model: manifest.model,
         bytes: manifest.totalBytes,
         accounts: manifest.files.length,
         revision: manifest.revision,
         cluster: "testnet",
         rpc,
+        submission: useTpu ? "tpu" : "rpc",
         message: deployment
           ? "Verified model registry on testnet. Create a signer-bound session to begin."
           : (error ??
-            `${(manifest.totalBytes / 2 ** 30).toFixed(3)} GiB exported. Local reference and SBF checks pass. Full weight deployment is pending; public RPC rate limits interrupted the program upload.`),
+            `${(manifest.totalBytes / 2 ** 30).toFixed(3)} GiB exported. Program deployed and bytecode verified on testnet. Local reference and SBF checks pass; the complete sealed model registry is still pending.`),
       });
       return;
     }
@@ -166,6 +204,28 @@ createServer(async (req, res) => {
         deployment ? 200 : 409,
         deployment ?? { error: "Model is not deployed" },
       );
+      return;
+    }
+    if (path === "/api/upload") {
+      try {
+        respond(
+          200,
+          JSON.parse(
+            await readFile(
+              resolve(
+                import.meta.dirname,
+                "../inference/deployment/upload-status.json",
+              ),
+              "utf8",
+            ),
+          ),
+        );
+      } catch {
+        respond(200, {
+          complete: false,
+          message: "No upload progress recorded",
+        });
+      }
       return;
     }
     if (path === "/api/validation") {

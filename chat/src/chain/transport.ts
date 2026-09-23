@@ -3,6 +3,9 @@ import {
   address,
   appendTransactionMessageInstructions,
   createSolanaRpc,
+  createDefaultRpcTransport,
+  createSolanaRpcFromTransport,
+  type RpcTransport,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
@@ -11,8 +14,11 @@ import {
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
+  type Blockhash,
   type Instruction,
   type KeyPairSigner,
+  type Signature,
+  type GetSignatureStatusesApi,
 } from "@solana/kit";
 import {
   descriptor,
@@ -46,6 +52,9 @@ export type Work = {
   lane?: number;
   parts?: Instruction[];
 };
+type Confirmation = ReturnType<
+  GetSignatureStatusesApi["getSignatureStatuses"]
+>["value"][number];
 const ro = (key: string) => ({
   address: address(key),
   role: AccountRole.READONLY,
@@ -162,8 +171,92 @@ export function mergeFor(
 }
 export class Transport {
   readonly rpc;
+  submitter?: (wire: string) => Promise<void>;
+  private lifetime?: Promise<{
+    blockhash: Blockhash;
+    lastValidBlockHeight: bigint;
+  }>;
+  private lifetimeAt = 0;
+  private heightAt = 0;
+  private heightValue?: Promise<bigint>;
+  private statusRequests: {
+    signature: Signature;
+    resolve: (status: Confirmation) => void;
+    reject: (e: unknown) => void;
+  }[] = [];
+  private statusTimer?: ReturnType<typeof setTimeout>;
   constructor(url = "https://api.testnet.solana.com") {
-    this.rpc = createSolanaRpc(url);
+    if (new URL(url).hostname !== "api.testnet.solana.com") {
+      this.rpc = createSolanaRpc(url);
+      return;
+    }
+    const base = createDefaultRpcTransport({ url });
+    let queue = Promise.resolve(),
+      pauseUntil = 0;
+    const limited: RpcTransport = async (config) => {
+      for (let attempt = 0; ; attempt++) {
+        queue = queue.then(
+          () =>
+            new Promise<void>((resolve) =>
+              setTimeout(resolve, Math.max(500, pauseUntil - Date.now())),
+            ),
+        );
+        await queue;
+        config.signal?.throwIfAborted();
+        try {
+          return await base(config);
+        } catch (error) {
+          const status = (error as { context?: { statusCode?: number } })
+            .context?.statusCode;
+          if (attempt >= 4 || ![429, 502, 503, 504].includes(status ?? 0))
+            throw error;
+          pauseUntil = Date.now() + Math.min(30_000, 2000 * 2 ** attempt);
+        }
+      }
+    };
+    this.rpc = createSolanaRpcFromTransport(limited);
+  }
+  // Sixteen lanes share one status poll instead of multiplying public RPC
+  // requests by the number of workers. Each response retains its signature.
+  status(signature: Signature): Promise<Confirmation> {
+    return new Promise((resolve, reject) => {
+      this.statusRequests.push({ signature, resolve, reject });
+      this.statusTimer ??= setTimeout(() => {
+        void this.flushStatuses();
+      }, 100);
+    });
+  }
+  private async flushStatuses() {
+    this.statusTimer = undefined;
+    const requests = this.statusRequests.splice(0, 256);
+    if (this.statusRequests.length)
+      this.statusTimer = setTimeout(() => {
+        void this.flushStatuses();
+      }, 100);
+    try {
+      const result = await this.rpc
+        .getSignatureStatuses(
+          requests.map((r) => r.signature),
+          { searchTransactionHistory: true },
+        )
+        .send();
+      requests.forEach((r, i) => r.resolve(result.value[i]));
+    } catch (error) {
+      requests.forEach((r) => r.reject(error));
+    }
+  }
+  height(): Promise<bigint> {
+    if (!this.heightValue || Date.now() - this.heightAt > 2000) {
+      this.heightAt = Date.now();
+      this.heightValue = this.rpc
+        .getBlockHeight({ commitment: "confirmed" })
+        .send()
+        .catch((error) => {
+          this.heightValue = undefined;
+          throw error;
+        });
+    }
+    return this.heightValue;
   }
   async checkNetwork() {
     if ((await this.rpc.getGenesisHash().send()) !== TESTNET_GENESIS)
@@ -185,9 +278,18 @@ export class Transport {
     instructions: Instruction[] = [work.instruction],
     computeUnitLimit = 1_400_000,
   ) {
-    const { value: lifetime } = await this.rpc
-      .getLatestBlockhash({ commitment: "confirmed" })
-      .send();
+    if (!this.lifetime || Date.now() - this.lifetimeAt > 10_000) {
+      this.lifetimeAt = Date.now();
+      this.lifetime = this.rpc
+        .getLatestBlockhash({ commitment: "confirmed" })
+        .send()
+        .then((r) => r.value)
+        .catch((error) => {
+          this.lifetime = undefined;
+          throw error;
+        });
+    }
+    const lifetime = await this.lifetime;
     const message = pipe(
       createTransactionMessage({ version: 1 }),
       (m) => setTransactionMessageFeePayerSigner(work.payer, m),
@@ -214,6 +316,10 @@ export class Transport {
   async submit(signed: Awaited<ReturnType<Transport["sign"]>>) {
     // Retry the same signed wire bytes after transport uncertainty. Resigning
     // changes the transaction identity; callers must resolve expiry first.
+    if (this.submitter) {
+      await this.submitter(signed.wire);
+      return signed.signature;
+    }
     await this.rpc
       .sendTransaction(signed.wire, {
         encoding: "base64",
@@ -241,12 +347,7 @@ export async function sendConfirmed(
   }
   for (let attempt = 0; attempt < 100; attempt++) {
     signal?.throwIfAborted();
-    const result = await transport.rpc
-      .getSignatureStatuses([signed.signature], {
-        searchTransactionHistory: true,
-      })
-      .send();
-    const status = result.value[0];
+    const status = await transport.status(signed.signature);
     if (status?.err)
       throw new Error(
         `Transaction ${signed.signature} failed: ${JSON.stringify(status.err)}`,
@@ -258,10 +359,7 @@ export async function sendConfirmed(
       onReceipt?.(signed.signature);
       return status.slot;
     }
-    if (
-      (await transport.rpc.getBlockHeight({ commitment: "confirmed" }).send()) >
-      signed.lastValidBlockHeight
-    )
+    if ((await transport.height()) > signed.lastValidBlockHeight)
       throw new Error(
         `Transaction ${signed.signature} expired or is unresolved. Resume from on-chain state.`,
       );

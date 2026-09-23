@@ -368,12 +368,13 @@
   },
   "liveUploadPlan": {
     "rentSOL": 21460.98945792,
-    "transactions": 1208420,
-    "payloadBytesPerWrite": 3500
+    "transactions": 1124997,
+    "payloadBytesPerWrite": 3760,
+    "wireBytesPerFullWrite": 4089
   },
   "limitations": [
-    "Live testnet program upload interrupted by HTTP 429 connection limits",
-    "Model weights have not been uploaded",
+    "Program deployed and bytecode verified; full model upload is incomplete",
+    "Initial full shard and norm tensors uploaded and read-back verified; complete model registry is unpublished",
     "Full chat transport has not been exercised on a deployed model",
     "128-token runtime context",
     "General model quality and perplexity have not been measured"

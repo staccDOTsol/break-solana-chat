@@ -17,7 +17,12 @@ import {
   getCreateAccountInstruction,
   getTransferSolInstruction,
 } from "@solana-program/system";
-import { Transport, TESTNET_GENESIS } from "../src/chain/transport.ts";
+import { TpuRelay } from "./tpu-relay.ts";
+import {
+  Transport,
+  TESTNET_GENESIS,
+  type Work,
+} from "../src/chain/transport.ts";
 
 const option = (name: string, fallback?: string) => {
   const i = process.argv.indexOf(name);
@@ -41,7 +46,9 @@ type FileSpec = {
   payloadSha256: string;
 };
 const files: FileSpec[] = manifest.files;
-const CHUNK = 3500;
+// Two signatures and the current v1 account/config layout use 329 bytes.
+// 3,760-byte writes serialize to 4,089 bytes, below the 4,096-byte ceiling.
+const CHUNK = 3760;
 const transport = new Transport(
   option("--rpc", "https://api.testnet.solana.com"),
 );
@@ -78,6 +85,23 @@ const plan = {
 };
 console.log(JSON.stringify(plan, null, 2));
 if (!execute) process.exit(0);
+const relay = process.argv.includes("--tpu")
+  ? new TpuRelay(option("--rpc", "https://api.testnet.solana.com")!)
+  : undefined;
+if (relay) {
+  await relay.ready;
+  transport.submitter = (wire) => relay.send([wire]);
+}
+const onlyTensor = option("--only-tensor");
+const selected = files
+  .map((_, i) => i)
+  .filter(
+    (i) => onlyTensor === undefined || files[i].tensor === Number(onlyTensor),
+  );
+if (!selected.length) throw new Error("No matching tensor");
+const batchSize = relay ? Number(option("--batch", "32")) : 1;
+if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 128)
+  throw new Error("--batch must be 1..128");
 const program = address(
   option("--program") ??
     (() => {
@@ -170,12 +194,7 @@ async function send(
     firstError = error;
   }
   for (let attempt = 0; attempt < 90; attempt++) {
-    const result = await transport.rpc
-      .getSignatureStatuses([signed.signature], {
-        searchTransactionHistory: true,
-      })
-      .send();
-    const status = result.value[0];
+    const status = await transport.status(signed.signature);
     if (status?.err)
       throw new Error(
         `Transaction failed ${signed.signature}: ${JSON.stringify(status.err)}`,
@@ -185,9 +204,7 @@ async function send(
       status?.confirmationStatus === "finalized"
     )
       return signed.signature;
-    const height = await transport.rpc
-      .getBlockHeight({ commitment: "confirmed" })
-      .send();
+    const height = await transport.height();
     if (height > signed.lastValidBlockHeight)
       throw new Error(
         `Transaction expired or confirmation is uncertain: ${signed.signature}. Resume after checking its status.`,
@@ -205,16 +222,22 @@ async function send(
     `Confirmation uncertain for ${signed.signature}; stopped without re-signing. ${String(firstError ?? "")}`,
   );
 }
+const payerTarget =
+  onlyTensor === undefined
+    ? BigInt(Math.ceil(uploadTransactions / lanes)) * 10_000n + 2_000_000_000n
+    : 2_000_000_000n;
 for (const payer of payers) {
   const current = (await transport.rpc.getBalance(payer.address).send()).value;
-  if (current < 2_000_000_000n)
+  // The target includes two SOL of reserve. Avoid a new funding transaction
+  // for every tiny fee difference when resuming an interrupted upload.
+  if (current + 1_000_000_000n < payerTarget)
     await send(
       uploader,
       [
         getTransferSolInstruction({
           source: uploader,
           destination: payer.address,
-          amount: 2_000_000_000n - current,
+          amount: payerTarget - current,
         }),
       ],
       20_000,
@@ -227,6 +250,48 @@ const authority = {
 };
 const sha = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
+const startedAt = Date.now();
+let confirmedBytes = 0,
+  confirmedWrites = 0,
+  sealedAccounts = 0;
+let lastProgressAt = 0;
+async function reportProgress(force = false) {
+  if (!force && Date.now() - lastProgressAt < 15_000) return;
+  lastProgressAt = Date.now();
+  const status = {
+    updatedAt: new Date().toISOString(),
+    startedAt: new Date(startedAt).toISOString(),
+    cluster: "testnet",
+    program,
+    model: manifest.model,
+    runConfirmedBytes: confirmedBytes,
+    runConfirmedWrites: confirmedWrites,
+    runSealedAccounts: sealedAccounts,
+    writesPerSecond: Number(
+      (confirmedWrites / Math.max(1, (Date.now() - startedAt) / 1000)).toFixed(
+        2,
+      ),
+    ),
+    totalBytes: manifest.totalBytes,
+    complete: false,
+    running: true,
+  };
+  console.log(JSON.stringify({ progress: status }));
+  await writeFile(
+    resolve(output, "upload-status.json"),
+    JSON.stringify(status) + "\n",
+    { mode: 0o600 },
+  );
+}
+let nextBulkReadAt = 0;
+async function readWholeAccount(key: KeyPairSigner["address"]) {
+  const reserved = Math.max(Date.now(), nextBulkReadAt);
+  nextBulkReadAt = reserved + 6000;
+  await delay(Math.max(0, reserved - Date.now()));
+  return transport.rpc
+    .getAccountInfo(key, { encoding: "base64", commitment: "confirmed" })
+    .send();
+}
 async function upload(
   name: string,
   signer: KeyPairSigner,
@@ -236,18 +301,26 @@ async function upload(
   const hash = sha(image.subarray(128));
   const progressPath = resolve(output, `${name}-progress.json`);
   let chain = await transport.rpc
-    .getAccountInfo(signer.address, { encoding: "base64" })
+    .getAccountInfo(signer.address, {
+      encoding: "base64",
+      commitment: "confirmed",
+      dataSlice: { offset: 0, length: 128 },
+    })
     .send();
   if (chain.value) {
     const data = Buffer.from(chain.value.data[0], "base64");
     if (
       chain.value.owner !== program ||
-      data.length !== image.length ||
+      Number(chain.value.space) !== image.length ||
       !data.subarray(48, 68).equals(Buffer.from(image.subarray(48, 68)))
     )
       throw new Error(`Existing ${name} has incompatible metadata`);
     if (data[8] === 1) {
-      if (sha(data.subarray(128)) !== hash)
+      const whole = await readWholeAccount(signer.address);
+      if (
+        !whole.value ||
+        sha(Buffer.from(whole.value.data[0], "base64").subarray(128)) !== hash
+      )
         throw new Error(`${name}: sealed payload hash mismatch`);
       return;
     }
@@ -297,25 +370,95 @@ async function upload(
     authority,
   ];
   while (offset < image.length) {
-    const end = Math.min(offset + CHUNK, image.length);
-    const data = new Uint8Array(5 + end - offset);
-    data[0] = 91;
-    new DataView(data.buffer).setUint32(1, offset, true);
-    data.set(image.subarray(offset, end), 5);
-    await send(
-      payer,
-      [{ programAddress: program, accounts: metas, data }],
-      20_000,
-    );
+    const signed: (Awaited<ReturnType<Transport["sign"]>> & { work: Work })[] =
+      [];
+    let end = offset;
+    for (let i = 0; i < batchSize && end < image.length; i++) {
+      const next = Math.min(end + CHUNK, image.length);
+      const data = new Uint8Array(5 + next - end);
+      data[0] = 91;
+      new DataView(data.buffer).setUint32(1, end, true);
+      data.set(image.subarray(end, next), 5);
+      const work = {
+        payer,
+        instruction: { programAddress: program, accounts: metas, data },
+      };
+      const tx = await transport.sign(work, [work.instruction], 20_000);
+      if (Buffer.from(tx.wire, "base64").length > 4096)
+        throw new Error("Oversized v1 write");
+      signed.push({ ...tx, work });
+      end = next;
+    }
+    if (relay) await relay.send(signed.map((tx) => tx.wire));
+    else await transport.submit(signed[0]);
+    let remaining = signed;
+    let expiredRetries = 0;
+    for (let attempt = 0; remaining.length && attempt < 100; attempt++) {
+      const statuses = await Promise.all(
+        remaining.map((tx) => transport.status(tx.signature)),
+      );
+      remaining = remaining.filter((tx, i) => {
+        const status = statuses[i];
+        if (status?.err)
+          throw new Error(
+            `Write ${tx.signature} failed: ${JSON.stringify(status.err)}`,
+          );
+        return (
+          status?.confirmationStatus !== "confirmed" &&
+          status?.confirmationStatus !== "finalized"
+        );
+      });
+      if (!remaining.length) break;
+      if (attempt % 4 === 3) {
+        const height = await transport.height();
+        if (remaining.some((tx) => height > tx.lastValidBlockHeight)) {
+          if (++expiredRetries > 5)
+            throw new Error("Repeated write expiry; confirmed offsets saved");
+          // Writes set the same immutable bytes at the same offset. Retrying
+          // only this idempotent operation with a fresh blockhash is safe even
+          // if an old transaction was confirmed on a fork we did not observe.
+          console.log(
+            JSON.stringify({
+              retryExpiredWrites: remaining.length,
+              account: signer.address,
+              retry: expiredRetries,
+            }),
+          );
+          remaining = await Promise.all(
+            remaining.map(async (tx) =>
+              height > tx.lastValidBlockHeight
+                ? {
+                    ...(await transport.sign(
+                      tx.work,
+                      [tx.work.instruction],
+                      20_000,
+                    )),
+                    work: tx.work,
+                  }
+                : tx,
+            ),
+          );
+          attempt = 0;
+        }
+        if (relay) await relay.send(remaining.map((tx) => tx.wire));
+        else await transport.submit(remaining[0]);
+      }
+      await delay(1000);
+    }
+    if (remaining.length)
+      throw new Error(
+        "Batch confirmation timed out; resume from the last confirmed offset",
+      );
+    confirmedBytes += end - offset;
+    confirmedWrites += signed.length;
     offset = end;
     await writeFile(progressPath + ".tmp", JSON.stringify({ hash, offset }), {
       mode: 0o600,
     });
     await rename(progressPath + ".tmp", progressPath);
+    await reportProgress();
   }
-  chain = await transport.rpc
-    .getAccountInfo(signer.address, { encoding: "base64" })
-    .send();
+  chain = await readWholeAccount(signer.address);
   if (
     !chain.value ||
     sha(Buffer.from(chain.value.data[0], "base64").subarray(128)) !== hash
@@ -326,6 +469,7 @@ async function upload(
     [{ programAddress: program, accounts: metas, data: Uint8Array.of(92) }],
     20_000,
   );
+  sealedAccounts++;
   console.log(
     JSON.stringify({
       sealed: name,
@@ -335,19 +479,62 @@ async function upload(
     }),
   );
 }
+await reportProgress(true);
 let next = 0;
-await Promise.all(
+let stopped = false;
+const workers = await Promise.allSettled(
   payers.map(async (payer) => {
-    while (next < files.length) {
-      const i = next++;
-      const f = files[i];
-      const image = await readFile(resolve(artifacts, f.name));
-      if (sha(image.subarray(128)) !== f.payloadSha256)
-        throw new Error("Local payload hash mismatch");
-      await upload(`weight-${i}`, signers[i], image, payer);
+    try {
+      while (!stopped && next < selected.length) {
+        const i = selected[next++];
+        const f = files[i];
+        const image = await readFile(resolve(artifacts, f.name));
+        if (sha(image.subarray(128)) !== f.payloadSha256)
+          throw new Error("Local payload hash mismatch");
+        await upload(`weight-${i}`, signers[i], image, payer);
+      }
+    } catch (error) {
+      stopped = true;
+      throw error;
     }
   }),
 );
+const failure = workers.find((r) => r.status === "rejected");
+if (failure?.status === "rejected") {
+  relay?.close();
+  await reportProgress(true);
+  const statusPath = resolve(output, "upload-status.json");
+  const status = JSON.parse(await readFile(statusPath, "utf8"));
+  await writeFile(
+    statusPath,
+    JSON.stringify({
+      ...status,
+      running: false,
+      error: String(failure.reason),
+    }) + "\n",
+    { mode: 0o600 },
+  );
+  throw failure.reason;
+}
+if (onlyTensor !== undefined) {
+  console.log(
+    "Selected tensor verified and sealed; full registry intentionally unpublished.",
+  );
+  await reportProgress(true);
+  const statusPath = resolve(output, "upload-status.json");
+  const status = JSON.parse(await readFile(statusPath, "utf8"));
+  await writeFile(
+    statusPath,
+    JSON.stringify({
+      ...status,
+      running: false,
+      selectedTensorComplete: Number(onlyTensor),
+    }) + "\n",
+    { mode: 0o600 },
+  );
+  relay?.close();
+  process.exit(0);
+}
 const registryImage = new Uint8Array(manifest.registryBytes);
 registryImage.set(new TextEncoder().encode("SEABLOB2"));
 registryImage[9] = 1;
@@ -380,3 +567,13 @@ await writeFile(
 console.log(
   "All model payloads verified and sealed on testnet. Public deployment receipt written.",
 );
+await reportProgress(true);
+const statusPath = resolve(output, "upload-status.json");
+const status = JSON.parse(await readFile(statusPath, "utf8"));
+await writeFile(
+  statusPath,
+  JSON.stringify({ ...status, running: false, complete: true }) + "\n",
+  { mode: 0o600 },
+);
+
+relay?.close();
