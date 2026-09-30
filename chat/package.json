@@ -1,0 +1,24 @@
+{
+  "name": "break-solana-chat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "server": "tsx server.ts",
+    "build": "tsc --noEmit && vite build",
+    "test": "tsx --test test/*.test.ts",
+    "deploy:model": "tsx scripts/deploy-model.ts"
+  },
+  "dependencies": {
+    "@solana/kit": "8.0.0",
+    "@solana-program/system": "0.14.1",
+    "@huggingface/transformers": "^3.8.1"
+  },
+  "devDependencies": {
+    "vite": "^7.1.7",
+    "typescript": "^5.9.0",
+    "tsx": "^4.20.0",
+    "@types/node": "^24.0.0"
+  }
+}
