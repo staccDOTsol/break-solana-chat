@@ -8,6 +8,7 @@ node_modules
 .venv/
 inference/artifacts/
 inference/deployment/
+inference/deployments/
 **/target/
 **/node_modules/
 **/*keypair*.json

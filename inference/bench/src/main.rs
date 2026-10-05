@@ -107,6 +107,14 @@ fn main() {
                 }
             }
         }
+        if phase == 9 {
+            if let Ok(path) = std::env::var("ACTIVATION_STATE") {
+                let live = std::fs::read(path).unwrap();
+                assert_eq!(live.len(), STATE_SIZE);
+                state.data[FLOATS..].copy_from_slice(&live[FLOATS..]);
+                println!("activation regression: using captured testnet values");
+            }
+        }
         let mut lane = Account::new(100_000_000, LANE_SIZE, &pid);
         lane.data[..8].copy_from_slice(b"SEALANE2");
         lane.data[8..40].copy_from_slice(key(1).as_ref());
@@ -213,6 +221,20 @@ fn main() {
                 failures += 1;
                 break;
             }
+            let pair = ([2, 12].contains(&phase) && stage < 4)
+                || (phase == 7 && stage > 0 && stage < 4)
+                || (phase == 15 && stage < 3072)
+                || (phase == 16 && stage < 11264);
+            if pair {
+                let mut next = work.clone();
+                next.data[1..5].copy_from_slice(&(u32_at(before, 120) + 1).to_le_bytes());
+                let expected_pair = svm.process_instruction(&next, &result.resulting_accounts);
+                let packed = svm.process_transaction_instructions(&[work.clone(), next], &current, None);
+                assert!(packed.program_result.is_ok(), "packed phase {phase} stage {stage} failed");
+                assert!(packed.compute_units_consumed <= 1_400_000);
+                assert_eq!(packed.resulting_accounts, expected_pair.resulting_accounts);
+                println!("packed phase={phase} stage={stage} instructions=2 cu={}", packed.compute_units_consumed);
+            }
             if parallel {
                 let mut expected_lane = current
                     .iter()
@@ -306,6 +328,23 @@ fn main() {
                     set_u32(&mut lane.data, 40, i as u32);
                     wave.push((key(10 + i as u32), lane));
                 }
+                if phase == 9 {
+                    let mut packed_ixs = Vec::new();
+                    let mut sequential = wave.clone();
+                    for i in 0..4 {
+                        let mut tile = ix.clone();
+                        tile.accounts[1].pubkey = key(10 + i as u32);
+                        let result = svm.process_instruction(&tile, &sequential);
+                        assert!(result.program_result.is_ok());
+                        sequential = result.resulting_accounts;
+                        packed_ixs.push(tile);
+                    }
+                    let packed = svm.process_transaction_instructions(&packed_ixs, &wave, None);
+                    assert!(packed.program_result.is_ok());
+                    assert!(packed.compute_units_consumed <= 1_400_000);
+                    assert_eq!(packed.resulting_accounts, sequential);
+                    println!("packed phase=9 instructions=4 cu={}", packed.compute_units_consumed);
+                }
                 for i in 0..LANES {
                     let mut tile = ix.clone();
                     tile.accounts[1].pubkey = key(10 + i as u32);
@@ -342,7 +381,79 @@ fn main() {
                         tile.accounts[4].pubkey = blob_key;
                         tile.data[5..7].copy_from_slice(&(desc as u16).to_le_bytes());
                     }
+                    let initial = wave.clone();
+                    let mut ordered = initial.clone();
                     for part in (0..stride).step_by(chunk) {
+                        tile.data[7..9].copy_from_slice(&(part as u16).to_le_bytes());
+                        let result = svm.process_instruction(&tile, &ordered);
+                        assert!(result.program_result.is_ok());
+                        ordered = result.resulting_accounts;
+                    }
+                    if i == 0 && ![5, 9].contains(&phase) {
+                        let mut isolated = initial.clone();
+                        let count = stride.div_ceil(chunk);
+                        for part in 0..count {
+                            let slice_key = key(10000 + part as u32);
+                            isolated.push((slice_key, Account::new(100_000_000, LANE_SIZE, &pid)));
+                            let init = Instruction::new_with_bytes(pid, &[7, i as u8, part as u8], vec![
+                                AccountMeta::new(slice_key, true), r(1), AccountMeta::new_readonly(key(2), true),
+                            ]);
+                            let result = svm.process_instruction(&init, &isolated);
+                            assert!(result.program_result.is_ok());
+                            isolated = result.resulting_accounts;
+                        }
+                        for part in (0..count).rev() {
+                            let mut slice = tile.clone(); slice.data[0] = 8;
+                            slice.accounts[1].pubkey = key(10000 + part as u32);
+                            slice.data[7..9].copy_from_slice(&((part * chunk) as u16).to_le_bytes());
+                            let result = svm.process_instruction(&slice, &isolated);
+                            assert!(result.program_result.is_ok());
+                            assert!(result.compute_units_consumed <= 1_400_000);
+                            let duplicate = svm.process_instruction(&slice, &result.resulting_accounts);
+                            assert!(duplicate.program_result.is_ok());
+                            assert_eq!(duplicate.resulting_accounts, result.resulting_accounts);
+                            isolated = result.resulting_accounts;
+                            let mut wrong = slice.clone(); wrong.data[7..9].copy_from_slice(&(((part + 1) % count * chunk) as u16).to_le_bytes());
+                            assert!(svm.process_instruction(&wrong, &isolated).program_result.is_err());
+                        }
+                        let mut data = vec![9]; data.extend(1u32.to_le_bytes());
+                        let mut metas = vec![r(1), w(10), AccountMeta::new_readonly(key(2), true), r(3)];
+                        metas.extend((0..count).map(|part| r(10000 + part as u32)));
+                        let collect = Instruction::new_with_bytes(pid, &data, metas);
+                        let result = svm.process_instruction(&collect, &isolated);
+                        assert!(result.program_result.is_ok());
+                        assert_eq!(result.resulting_accounts.iter().find(|a| a.0 == key(10)).unwrap(), ordered.iter().find(|a| a.0 == key(10)).unwrap(), "slice aggregation differs from legacy lane");
+                        let mut missing = collect.clone(); missing.accounts.pop();
+                        assert!(svm.process_instruction(&missing, &isolated).program_result.is_err());
+                        let mut duplicate = collect.clone(); duplicate.accounts[5].pubkey = duplicate.accounts[4].pubkey;
+                        assert!(svm.process_instruction(&duplicate, &isolated).program_result.is_err());
+                        let mut unsigned = collect.clone(); unsigned.accounts[2].is_signer = false;
+                        assert!(svm.process_instruction(&unsigned, &isolated).program_result.is_err());
+                        for (offset, value) in [(44, 0u32), (48, 99), (52, 128), (68, 15), (64, 0)] {
+                            let mut invalid = isolated.clone();
+                            set_u32(&mut invalid.iter_mut().find(|a| a.0 == key(10000)).unwrap().1.data, offset, value);
+                            assert!(svm.process_instruction(&collect, &invalid).program_result.is_err());
+                        }
+                        let mut foreign = isolated.clone();
+                        foreign.iter_mut().find(|a| a.0 == key(10000)).unwrap().1.data[8..40].copy_from_slice(key(99).as_ref());
+                        assert!(svm.process_instruction(&collect, &foreign).program_result.is_err());
+                        let close = Instruction::new_with_bytes(pid, &[10], vec![r(1), AccountMeta::new(key(2), true), w(10000)]);
+                        assert!(svm.process_instruction(&close, &foreign).program_result.is_err());
+                        let closed = svm.process_instruction(&close, &isolated);
+                        assert!(closed.program_result.is_ok());
+                        assert_eq!(closed.resulting_accounts.iter().find(|a| a.0 == key(10000)).unwrap().1.lamports, 0);
+                        assert_eq!(closed.resulting_accounts.iter().find(|a| a.0 == key(1)).unwrap(), isolated.iter().find(|a| a.0 == key(1)).unwrap());
+                        println!("independent phase={phase} slices={count} collect_cu={} identical to legacy; invalid and missing slices rejected", result.compute_units_consumed);
+                    }
+                    // A previous deployment may have computed only the first
+                    // slice without the new completion bitmap. Resume that prefix.
+                    if chunk < stride {
+                        tile.data[7..9].copy_from_slice(&0u16.to_le_bytes());
+                        wave = svm.process_instruction(&tile, &wave).resulting_accounts;
+                        let lane = wave.iter_mut().find(|a| a.0 == key(10 + i as u32)).unwrap();
+                        set_u32(&mut lane.1.data, 64, 0);
+                    }
+                    for part in (0..stride).step_by(chunk).collect::<Vec<_>>().into_iter().rev() {
                         tile.data[7..9].copy_from_slice(&(part as u16).to_le_bytes());
                         let result = svm.process_instruction(&tile, &wave);
                         assert!(
@@ -351,7 +462,7 @@ fn main() {
                             result.program_result
                         );
                         wave = result.resulting_accounts;
-                        if part == 0 {
+                        {
                             let retry = svm.process_instruction(&tile, &wave);
                             assert!(retry.program_result.is_ok());
                             assert_eq!(
@@ -360,6 +471,7 @@ fn main() {
                             );
                         }
                     }
+                    assert_eq!(wave, ordered, "reordered/legacy slices changed phase {phase} lane {i}");
                 }
                 let mut metas = vec![
                     AccountMeta::new(key(1), false),
@@ -370,6 +482,17 @@ fn main() {
                     (0..LANES).map(|i| AccountMeta::new_readonly(key(10 + i as u32), false)),
                 );
                 let merge = Instruction::new_with_bytes(pid, &[5, 1, 0, 0, 0], metas);
+                if ![5, 9].contains(&phase) {
+                    let mut skipped = ix.clone();
+                    skipped.data[7..9].copy_from_slice(&(if phase == 10 { 8u16 } else { 24u16 }).to_le_bytes());
+                    let result = svm.process_instruction(&skipped, &accounts);
+                    assert!(result.program_result.is_ok(), "independent slice rejected");
+                    let incomplete = result.resulting_accounts.iter().find(|a| a.0 == key(10)).unwrap().1.clone();
+                    assert_eq!(u32_at(&incomplete.data, 60), 0, "hole counted as complete");
+                    let mut missing = wave.clone();
+                    missing.iter_mut().find(|a| a.0 == key(10)).unwrap().1 = incomplete;
+                    assert!(svm.process_instruction(&merge, &missing).program_result.is_err(), "incomplete wave merged");
+                }
                 let result = svm.process_instruction(&merge, &wave);
                 println!(
                     "phase={phase} merge pos={pos} cu={} result={:?}",
@@ -400,17 +523,6 @@ fn main() {
                 .is_err(),
             "unsigned authority accepted"
         );
-        if parallel && ![5, 9].contains(&phase) {
-            let mut skipped = ix.clone();
-            skipped.data[7..9]
-                .copy_from_slice(&(if phase == 10 { 8u16 } else { 24u16 }).to_le_bytes());
-            assert!(
-                svm.process_instruction(&skipped, &accounts)
-                    .program_result
-                    .is_err(),
-                "out-of-order slice accepted"
-            );
-        }
         let mut stale = ix.clone();
         stale.data[1..5].copy_from_slice(&0u32.to_le_bytes());
         assert!(

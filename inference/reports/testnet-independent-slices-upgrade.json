@@ -1,0 +1,14 @@
+{
+  "verifiedAt": "2026-09-28T10:22:29.657592+00:00",
+  "program": "BkWuzU3fn4NS7LXdBxH1j4gRyRw3ma35aNGytbANzUvB",
+  "programData": "EjsifiRc6wyNynfHUgyqVUjCqMwniUCp2Es92zMkAM32",
+  "programSha256": "f001b20326fe45ef08a247fa0c72ff96ade687feda313100fc531c9a6eabf417",
+  "programBytes": 127408,
+  "programDeploymentSlot": 446064849,
+  "finalizedSlot": 446065208,
+  "byteForByteMatch": true,
+  "registrySha256": "5e7a8239af067b5022bd50b48af1781f57a3298d2867878aacbe738d288d1b9c",
+  "registrySealed": true,
+  "deploymentSignature": "619abbi9GDKcjRJUQWY1Ya8w1fc2C3PhH7xLA9HophVQHx9yW2Wu5k35mG1fAEKvo7ZXTwaeAHtnbruNdbQWHuRR",
+  "change": "Optional independently writable slice accounts, fixed lane/slice identities, checked aggregation and separate rent reclamation; legacy instructions preserved."
+}

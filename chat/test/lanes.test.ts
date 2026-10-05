@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { AccountRole, generateKeyPairSigner } from "@solana/kit";
 import { LANES, type Header, type Shard } from "../src/chain/layout.ts";
-import { mergeFor, TESTNET_GENESIS, workFor } from "../src/chain/transport.ts";
+import { mergeFor, collectSlicesFor, TESTNET_GENESIS, workFor } from "../src/chain/transport.ts";
 const keys = await Promise.all(
   Array.from({ length: 38 }, () => generateKeyPairSigner()),
 );
@@ -88,6 +88,30 @@ test("rejects a missing weight range and an unintended cluster", () => {
   );
   assert.throws(
     () => workFor(h, session, { ...deployment, genesis: "mainnet" }),
-    /restricted to testnet/,
+    /Deployment genesis does not match/,
   );
+  assert.equal(workFor(h, session, { ...deployment, genesis: "custom-genesis" }, "custom-genesis").length, LANES);
+});
+
+test("every matrix slice has a distinct output account and fee payer, including slices in the same lane", async () => {
+  const sliceKeys = await Promise.all(Array.from({ length: 512 }, () => generateKeyPairSigner()));
+  const isolated = { ...session, sliceWorkers: sliceKeys.slice(0, 256).map(key => key.address), slicePayers: sliceKeys.slice(256) };
+  for (const phase of [3, 10]) {
+    const model = { ...deployment, shards: [{ ...deployment.shards[0], tensor: phase === 10 ? 10 : 4, cols: phase === 10 ? 12288 : 4096 }] };
+    const work = workFor({ ...h, phase }, isolated, model), writes = new Set<string>();
+    assert.equal(work.length, phase === 10 ? 256 : 96);
+    for (const item of work) {
+      assert.equal(item.instruction.data?.[0], 8);
+      assert.equal(item.instruction.accounts![0].role, AccountRole.READONLY);
+      assert.equal(item.instruction.accounts![2].role, AccountRole.READONLY_SIGNER);
+      for (const key of [item.payer.address, ...item.instruction.accounts!.filter(a => (a.role & 1) !== 0).map(a => a.address)]) {
+        assert(!writes.has(key), `shared writable account: ${key}`); writes.add(key);
+      }
+    }
+    const collectors = collectSlicesFor({ ...h, phase }, isolated, model);
+    assert.equal(collectors.length, 16);
+    assert(collectors.every(item => item.instruction.accounts!.length === (phase === 10 ? 20 : 10)));
+    assert(collectors.every(item => item.instruction.accounts!.slice(4).every(a => a.role === AccountRole.READONLY)));
+    assert.throws(() => workFor({ ...h, phase }, { ...isolated, slicePayers: Array(256).fill(sliceKeys[300]) }, model), /disjoint/);
+  }
 });

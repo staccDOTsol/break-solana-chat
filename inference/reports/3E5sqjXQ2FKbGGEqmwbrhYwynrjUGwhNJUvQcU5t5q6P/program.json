@@ -1,0 +1,12 @@
+{
+  "verifiedAt": "2026-10-05T02:51:29.275Z",
+  "cluster": "custom",
+  "genesis": "3E5sqjXQ2FKbGGEqmwbrhYwynrjUGwhNJUvQcU5t5q6P",
+  "program": "BkWuzU3fn4NS7LXdBxH1j4gRyRw3ma35aNGytbANzUvB",
+  "programData": "EjsifiRc6wyNynfHUgyqVUjCqMwniUCp2Es92zMkAM32",
+  "upgradeAuthority": "D88qwUFs75jLzVD9noGp8nyPEw4yqqvco3oMrRote2wa",
+  "programDeploymentSlot": 0,
+  "programBytes": 127408,
+  "sha256": "f001b20326fe45ef08a247fa0c72ff96ade687feda313100fc531c9a6eabf417",
+  "verifiedByteForByte": true
+}

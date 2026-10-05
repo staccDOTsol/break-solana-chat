@@ -7,6 +7,28 @@ import {
 } from "@solana/kit";
 import { Transport } from "../src/chain/transport.ts";
 
+test("fresh upload polls use the recent cache without weakening historical checks", async () => {
+  const transport = new Transport();
+  const calls: { signatures: Signature[]; history: boolean }[] = [];
+  Object.defineProperty(transport, "rpc", { value: {
+    getSignatureStatuses: (signatures: Signature[], config: { searchTransactionHistory: boolean }) => ({
+      send: async () => {
+        calls.push({ signatures, history: config.searchTransactionHistory });
+        return { value: signatures.map(() => null) };
+      },
+    }),
+  } });
+  await Promise.all([
+    transport.status("fresh-1" as Signature, false),
+    transport.status("old" as Signature),
+    transport.status("fresh-2" as Signature, false),
+  ]);
+  assert.deepEqual(calls, [
+    { signatures: ["fresh-1", "fresh-2"], history: false },
+    { signatures: ["old"], history: true },
+  ]);
+});
+
 test("parallel confirmations share capped RPC batches and preserve signature order", async () => {
   const transport = new Transport();
   let calls = 0;

@@ -4,6 +4,7 @@ use solana_program::{
 };
 pub mod layout;
 pub mod math;
+mod slices;
 use layout::*;
 
 #[cfg(not(feature = "no-entrypoint"))]
@@ -126,6 +127,10 @@ pub fn process_instruction(pid: &Pubkey, a: &[AccountInfo], data: &[u8]) -> Prog
         4 => tile(pid, a, data),
         5 => merge(pid, a, data),
         6 => close(pid, a),
+        7 => slices::init(pid, a, data),
+        8 => tile_inner(pid, a, data, true),
+        9 => slices::merge(pid, a, data),
+        10 => slices::close(pid, a),
         _ => Err(E::InvalidInstructionData),
     }
 }
@@ -360,13 +365,16 @@ fn advance(pid: &Pubkey, a: &[AccountInfo], data: &[u8]) -> ProgramResult {
 }
 
 fn tile(pid: &Pubkey, a: &[AccountInfo], data: &[u8]) -> ProgramResult {
+    tile_inner(pid, a, data, false)
+}
+fn tile_inner(pid: &Pubkey, a: &[AccountInfo], data: &[u8], independent: bool) -> ProgramResult {
     check(a.len() >= 4 && data.len() == 8)?;
     state(pid, &a[0], &a[2])?;
     owned(pid, &a[1], LANE_SIZE)?;
     let sd = a[0].try_borrow_data()?;
     model(pid, &a[3], &sd)?;
     let mut ld = a[1].try_borrow_mut_data()?;
-    check(&ld[..8] == b"SEALANE2" && &ld[8..40] == a[0].key.as_ref())?;
+    check(&ld[..8] == if independent { b"SEASLCE3" } else { b"SEALANE2" } && &ld[8..40] == a[0].key.as_ref())?;
     let epoch = u32_at(&sd, 120);
     check(u32_at(data, 0) == epoch)?;
     let p = u32_at(&sd, 104);
@@ -384,17 +392,25 @@ fn tile(pid: &Pubkey, a: &[AccountInfo], data: &[u8]) -> ProgramResult {
         _ => 24,
     };
     check(part < end - start && part % chunk == 0)?;
+    if independent {
+        check(matches!(p, 3 | 6 | 8 | 10 | 13) && u32_at(&ld, 68) as usize == part / chunk)?;
+    }
     let part_end = (part + chunk).min(end - start);
+    let bit = 1u32 << (part / chunk);
+    let mut completed = 0u32;
     if u32_at(&ld, 44) == epoch {
         check(u32_at(&ld, 48) == p && u32_at(&ld, 52) as usize == start)?;
         let processed = u32_at(&ld, 60) as usize;
-        // Retries of an already completed slice cannot count as new work.
-        if processed >= part_end {
+        completed = u32_at(&ld, 64);
+        // Sessions created before slice batching used a contiguous row count.
+        // Preserve their already-computed prefix when resuming after upgrade.
+        if completed == 0 && processed > 0 {
+            check(processed <= end - start)?;
+            completed = (1u32 << processed.div_ceil(chunk)) - 1;
+        }
+        if completed & bit != 0 {
             return Ok(());
         }
-        check(processed == part)?;
-    } else {
-        check(part == 0)?;
     }
     if p == 5 {
         math::attention(&sd, &mut ld, start, layer, u32_at(&sd, 112) as usize);
@@ -449,7 +465,11 @@ fn tile(pid: &Pubkey, a: &[AccountInfo], data: &[u8]) -> ProgramResult {
     set_u32(&mut ld, 48, p);
     set_u32(&mut ld, 52, start as u32);
     set_u32(&mut ld, 56, (end - start) as u32);
-    set_u32(&mut ld, 60, part_end as u32);
+    completed |= bit;
+    set_u32(&mut ld, 64, completed);
+    // Merge still requires a complete contiguous prefix. Receiving the last
+    // slice early cannot hide a hole or reuse values from an earlier epoch.
+    set_u32(&mut ld, 60, (completed.trailing_ones() as usize * chunk).min(end - start) as u32);
     Ok(())
 }
 

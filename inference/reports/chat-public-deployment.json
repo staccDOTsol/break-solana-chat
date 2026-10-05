@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-09-28T10:25:07.656296+00:00",
+  "url": "https://chat.staccpad.fun",
+  "hosting": "Fly.io",
+  "machine": "48edddeec39748",
+  "image": "registry.fly.io/break-solana-chat:deployment-01M3KRNAW9NZHGSW3MA9P0TFW6",
+  "domainDns": "Vercel",
+  "tls": "Issued / active",
+  "sponsorEnabled": true,
+  "delivery": "Striped RPC submission, each transaction racing TPU; shared RPC read race",
+  "discovery": {
+    "advertised": 110,
+    "checked": 110,
+    "healthy": 79
+  },
+  "nodeTestsPassed": 31,
+  "sbfPackedInstructions": "All tested packed outputs match sequential output and fit 1.4M CU",
+  "publicBrowserChecks": {
+    "ownerCanCompose": true,
+    "anonymousSharedReadOnly": true,
+    "sharedStreamReflectsCloseWithoutReload": true,
+    "mobileWidth": 390,
+    "horizontalOverflow": false,
+    "consoleErrors": false,
+    "newChatIndependentSlicesEnabled": true
+  },
+  "setupSmoke": {
+    "milliseconds": 7116,
+    "transactions": 5,
+    "matrixSliceMilliseconds": 1385,
+    "storageReclaimed": true
+  },
+  "fullLiveModelReplyVerified": false,
+  "independentSlices": true,
+  "parallelSliceAccounts": 256,
+  "programReceipt": "testnet-independent-slices-upgrade.json",
+  "independentWave": {
+    "slices": 96,
+    "executionSlots": [
+      "446065293",
+      "446065295",
+      "446065294"
+    ],
+    "setupMilliseconds": 10341,
+    "waveIncludingMergeMilliseconds": 6722,
+    "checkpointVerified": true,
+    "storageReclaimed": true
+  },
+  "activationRegression": {
+    "previousError": "eight-lane activation bundle exceeded 1.4M CU; BigInt serialization obscured the error",
+    "fix": "four-lane activation bundles and BigInt-safe error messages",
+    "capturedStateReplayComputeUnits": 1060912
+  }
+}

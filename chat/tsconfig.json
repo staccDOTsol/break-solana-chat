@@ -6,8 +6,9 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
+    "jsx": "react-jsx",
     "allowImportingTsExtensions": true,
-    "lib": ["ES2022", "DOM"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": ["src", "server.ts", "scripts", "test", "vite.config.ts"]
 }

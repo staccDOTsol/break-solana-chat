@@ -1,0 +1,43 @@
+app = "break-solana-chat"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = 60
+
+[env]
+  SEA_RPC_RACE_URLS = "http://74.50.83.238:8899,http://198.96.88.22:8899,http://64.130.35.119:8899"
+  SEA_INDEPENDENT_SLICES = "1"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/api/health"
+
+[[mounts]]
+  source = "chat_data"
+  destination = "/data"
+
+[[files]]
+  guest_path = "/run/sponsor.json"
+  secret_name = "SEA_SPONSOR_KEYPAIR_B64"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "1gb"
