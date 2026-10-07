@@ -1,0 +1,20 @@
+@tailwind utilities;
+
+.model-market-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.85fr);
+  gap: 20px;
+  align-items: start;
+  color: #f0f2e9;
+}
+.model-market-grid section { min-width: 0; }
+.model-market-grid h2 { font: 700 23px/1.15 Inter, sans-serif; letter-spacing: normal; margin: 0; }
+.model-market-grid h3 { margin: 0; }
+.model-market-grid p { line-height: 1.5; }
+.model-market-grid button { cursor: pointer; }
+.model-market-grid button:disabled { cursor: not-allowed; }
+.model-market-grid input, .model-market-grid select { font: inherit; }
+.model-market-grid a { text-decoration: none; }
+@media (max-width: 900px) {
+  .model-market-grid { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,10 @@
+{
+  "cluster": "testnet",
+  "program": "BkWuzU3fn4NS7LXdBxH1j4gRyRw3ma35aNGytbANzUvB",
+  "programData": "EjsifiRc6wyNynfHUgyqVUjCqMwniUCp2Es92zMkAM32",
+  "programBytes": 119440,
+  "sha256": "fedd3ec0f00073444006b51cecf6a0df4d7488307f060503bdf43b7ba2275e16",
+  "deploymentSignature": "58BMksFCqMEZ8FaztXu8rzx28HAfeufbzMdoaUXFth1TyADnHRi4SQZyU2oWV7bAoMpiPDYzSDeDKESWQwS3qrNh",
+  "verifiedByteForByte": true,
+  "modelWeightsDeployed": false
+}

@@ -1,0 +1,17 @@
+{
+  "verifiedAt": "2026-09-28T09:49:36.450032+00:00",
+  "cluster": "testnet",
+  "program": "BkWuzU3fn4NS7LXdBxH1j4gRyRw3ma35aNGytbANzUvB",
+  "programData": "EjsifiRc6wyNynfHUgyqVUjCqMwniUCp2Es92zMkAM32",
+  "programSha256": "ac468423fd4f51c43dea0dc827cc8da3e9874c4bddfe3a02d0c4b1cd4d2ce8b5",
+  "programBytes": 120360,
+  "programDeploymentSlot": 446056142,
+  "finalizedSlot": 446056313,
+  "byteForByteMatch": true,
+  "registry": "7nJBhySUPupRQ1WDSmFcTUsF29DeBn8wg7a9gsQFTNKb",
+  "registrySha256": "5e7a8239af067b5022bd50b48af1781f57a3298d2867878aacbe738d288d1b9c",
+  "registrySealed": true,
+  "change": "Independent row slices may complete in any order; merges still require full coverage. Legacy partial lanes resume without losing their completed prefix.",
+  "localValidation": "Mollusk SBF: identical sequential/reordered outputs, duplicate slice idempotence, legacy prefix migration, missing-slice rejection, all phases below 1.4M CU.",
+  "deploymentSignature": "4LcyXRNfrPMPQ9u7x9rpNQwFFFPKTyweJL5o3m6KFegQaB8d7dERD6NrjktXwJxRxUMfFrn4hqcnk8kWMXBEywcz"
+}
