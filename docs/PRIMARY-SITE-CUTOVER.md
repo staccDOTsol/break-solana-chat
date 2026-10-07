@@ -6,6 +6,31 @@ Solana mainnet Pump/PumpSwap transactions for
 chain reported by `/api/status`. The same public key identifies the token
 on both chains, but balances and transactions are independent.
 
+## Live status (2026-10-07 09:28 UTC)
+
+- The 569 Qwen3-8B weights and registry are sealed on custom genesis
+  `3E5sqjXQ2FKbGGEqmwbrhYwynrjUGwhNJUvQcU5t5q6P`; the completion and
+  independent finalized byte audit are saved under `inference/reports/<genesis>/`.
+- The local custom-chain smoke report under
+  `inference/deployments/<genesis>/chat-smoke/report.json` reached `stage: done`
+  with model output `Hi`, one generated token, and finalized model-program
+  transaction receipts. The exact program and genesis were verified against
+  the custom RPC.
+- `https://chat.staccpad.fun/` now serves the custom-chain Trade + Chat
+  lander. `/api/status` reports the exact custom genesis, program, registry,
+  and sponsor. The mainnet RPC guard and 390-pixel mobile layout passed live
+  checks. The chart correctly shows no price history before launch.
+- `https://model.squarefun.xyz/` and `/model` permanently redirect to the
+  primary site. Public direct TCP access to validator ports 8899 and 8900 is
+  blocked; HTTPS/WSS and local RPC remain available.
+- **Mainnet launch is waiting for dev-wallet funding.** At 09:18 UTC the
+  designated `WzMaL78srutrF6CsxEkWuhMaDF5HZA6jNRaEPengqpb` payer had
+  0.003841499 SOL. The gated atomic launcher requires a 0.04 SOL reserve
+  before computing the first buy; simulation stopped without submitting.
+  Once funded, run the simulation below, then `SEND=1` using the same local
+  key and the 90%-of-spendable cap. Verify the resulting mint, first buy,
+  chart observations, and wallet-signed site trade when practical.
+
 ## Gates before changing the live Fly app
 
 1. Finish all 569 sealed Qwen3-8B weight accounts and the sealed registry on
